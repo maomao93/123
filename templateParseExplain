@@ -1,0 +1,317 @@
+1、在mounted函数中执行compileToFunctions函数,并将用户的自定义的参数传入，主要是为了
+  将模板字符串编译成render函数和staticRenderFns函数。
+
+2、那compileToFunctions函数怎么来的呢？
+   createCompilerCreator函数执行创建了createCompiler函数 ------>
+   然后执行了createCompiler函数,在createCompiler函数中又执行了createCompileToFunctionFn函数,
+   createCompileToFunctionFn函数执行创建了compileToFunctions函数,
+   最后等于createCompiler函数创建了compile函数和compileToFunctions函数
+
+3、compileToFunctions函数干了什么?
+   1、获取参数中的warn函数
+   2、判断vue是否执行在一个禁止不安全eval的环境中
+   3、将模板字符串和用户自定义的文本表达式符号拼接作为对象key,
+      用于缓存render函数和staticRenderFns数组的，因为在模板字符串不变的情况下不需要
+      重新解析编译。
+   4、执行compile函数生成render字符串和staticRenderFns数组。
+   5、执行createFunction函数将编译好的表达式字符串生成render函数。
+   6、循环执行createFunction函数将staticRenderFns数组中的编译好的表达式字符串生成render函数，并返回保存这些render函数的staticRenderFns数组
+   7、将编译时的错误信息提示出来
+   8、将render函数和staticRenderFns数组输出
+   总结: compileToFunctions函数主要是将compile函数生成的render字符串变成函数并将解析过程中的
+        警告和错误提示出来。
+
+4、compile函数是怎么生成render字符串和staticRenderFns数组的？
+   1、初始化了errors数组和tips数组，生成一个根据传入的参数判断往errors数组或tips数组中添加信息
+   2、合并用户自定义的modules、directives和默认的modules、directives
+   3、用户自定义的一些参数替换默认的参数
+   4、执行baseCompile函数生成render字符串和staticRenderFns数组,以及收集错误和提示信息
+   5、收集AST树中的错误信息
+   6、将errors数组和tips数组和ast树和render字符串和staticRenderFns数组作为对象对应的属性值输出
+   总结: compile函数中生成的render字符串和staticRenderFns数组是由baseCompile函数生成的,
+        compile函数只是合并了一些参数和初始化了错误、提示收集框
+
+5、baseCompile函数是怎么生成render字符串和staticRenderFns数组的？
+   1、执行了parse函数将字符串模板解析成抽象语法树(AST)
+   2、根据用户在未明确传递了optimize参数为false时,对ast树进行优化
+   3、执行generate函数将ast树编译成渲染函数字符串
+   4、将ast树和渲染函数字符串和staticRenderFns数组输出
+   总结: baseCompile函数主要是将parse函数和generate函数生成的东西输出
+
+6、parse函数是怎么生成ast树的？
+   1、缓存一系列option中的参数(比如compile函数中生成的通过参数判断往errors数组或tips数组中添加信息的warn函数)
+   2、初始化保存节点起始标签的stack、是否保存空格的变量、根节点信息root、缓存当前节点的currentParent、判断文本标签的
+      inVPre和inPre变量、控制只提示一次错误或警告信息的warned变量
+   3、初始化只收集一次错误信息的warnOnce函数、将inVPre和inPre变量初始化的函数
+   4、执行parseHTML函数解析模板字符串
+   5、将root信息输出
+
+   一、parseHTML函数是怎么解析模板字符串的(模板字符串用html代替,</div>代表闭合标签,>代表结束标签)
+      1、初始化保存起始标签名的数组stack、字符下标index、用于缓存模板的last、缓存模板当前标签的lastTag
+          缓存一系列option参数、一系列用以解析标签的函数
+      2、进入一个通过判断html是否被解析完的循环中,首先是将html缓存到last变量中,然后进入一个判断            ↓
+          -----当lastTag不存在(也就是保存任何标签名)时 || lastTag标签名不为文本标签(script,style,textarea)时
+                这个时候会去查找html中的第一个<字符,接下来会出现种情况:
+                    1、html的第一个字符就是<,但是第一个是<并不代表就一定是标签的<,也有可能是注释的<等等，所以这里又会有好几种情况，并对其一一处理
+                        1、第一种: 为注释节点。
+                            - 获取-->的下标,当用户需要保存注释时,将注释保存在当前父元素对象的children
+                              数组里,最后将index下标更新,将html中的注释剔除                    -----------进入下一循环
+
+                        2、第二种: 条件注释节点 比如: <!--[if !IE]>-->
+                            - 获取]>的下标,直接将index下标更新,将html中的条件注释剔除           -----------进入下一循环
+
+                        3、第三种: doctype节点
+                            - 获取doctype节点,直接将index下标更新,将html中的doctype节点剔除      -----------进入下一循环
+
+                        4、第四种: 闭合标签
+                            - 获取比如:</div 字符,缓存index下标,将index下标更新,将html中的</div字符剔除,
+                              获取当前闭合标签名在保存起始标签的stack数组中的下标为变量pos.
+
+                            - 那么这个pos一定对应的是stack数组的最后一个,因为最后的开始标签一定是先闭合的
+                              比如: <div><span></span></div> 中,span是最后的开始标签那么它一定是先闭合的,
+                              所以如果不是最后一个则说明stack数组中缓存的标签中存在没有闭合的标签,这时会警告
+                              标签没有闭合,并将当前标签和那些没有闭合的标签进行闭合.
+
+                            - 怎么进行闭合？将parse函数中stack数组保存的起始标签中删除该标签信息,并将该标签信息中
+                              的' '字符文本节点信息删除,更新parse函数中currentParent变量更新为该标签的前一个未闭合标签,
+                              inVPre和inPre为true时,初始化inVPre和inPre表示已经跳出pre标签内或v-pre属性的标签内.
+
+                            - 更新stack数组，删除在stack数组的该项标签信息(包括该下标后面的前提存在的话),
+                              将lastTag更新为该标签的前一个起始标签(stack还存在标签).如果该标签不存在stack数组中,说明没有
+                              起始标签,标签名为br或p时,对该标签像起始标签一样处理,当然对p还要进行闭合操作.
+
+                        5、第五种: 起始标签
+                            - 获取起始标签,将index下标更新,将html中的起始标签剔除,然后进入一个循环.
+                              前提是 当标签名后面跟的不是>字符 && 标签上写有属性时,简单可以理解为当前标签
+                              有设置属性时, 将index下标更新为该字符在html中的位置,然后将该属性从html中剔除,
+                              最后是将属性字符串保存在match对象的attrs数组中。依次循环，直到属性字符串全部保存在
+                              match对象的attrs数组中。-------总的来说该循环就是用来保存属性字符串的
+
+                              比如:  class="item" :item="item"></div>这个字符串,满足条件,获取class="item"
+                              在整个字符串中的位置,并将位置下标更新给index,然后将class="item"从整个字符串中
+                              剔除,最后将class="item"字符串保存在match对象的attrs数组中,直到:item="item"也
+                              保存进match对象的attrs数组中后退出循环
+
+                            - 当存在>或/>字符时,表示当前起始标签处理结束,设置match.unarySlash为'/'或undefined(
+                              这个由是否存在/字符决定的,存在表示该标签为一元标签),更新index为>或/>在html中的下标,
+                              并将>或/>从html中剔除,设置match.end为index,然后将match对象输出。---------------
+                              ---这个match中存储着标签字符在html中的起始位置和结束位置、标签名、所有的属性字符串,
+                                 最后将match对象输出(*前提是该标签有结束标签)
+
+                            - 当match对象存在时(也就是完整的存在一个起始标签时),
+                                · 如果上一个起始标签为p标签&&当前标签为非段落式内容模型标签(比如div)时,直接将上一个起始标签P闭合。
+                                  将p标签从stack数组中删除,将lastTag设置为p标签的前一个起始标签。
+
+                                · 如果当前起始标签不是一元标签但是可以自己补全并闭合的标签&&当前起始标签名与上一个标签名相同时,
+                                  将上一个起始标签闭合,并从stack数组中删除,将lastTag设置为上一个起始标签的前一个起始标签.
+
+                              循环match中的attr數組(标签的属性),缓存属性值或空字符串,并对转义了的属性值进行转义,
+                              生成一个{name: 属性名, value: 属性值}的对象放入attrs数组中。
+                              当前标签不为一元标签 || 未设置/结束符时,将该标签名和属性信息生成一个对象放入stack数组中,
+                              并赋值lastTag为当前标签
+
+                            - 当前标签名为svg并在IE浏览器下把svg的属性名修改成普通浏览器下一样,然后生成一个ASTElement对象,
+                              ASTElement = {
+                                type: 1,                        //节点标签
+                                tag,                            //标签名
+                                attrsList: attrs,               //属性集合
+                                attrsMap: makeAttrsMap(attrs),  //属性名:属性值格式的对象
+                                parent,                         //当前节点的父元素
+                                children: []                    //收集子元素信息的集合
+                              }
+                              当标签名为svg或math时,添加ASTElement对象的ns属性为true,当在非服务端下&&当前标签名为
+                              (style或类型未设置的script或type为text/javascript的script)时,添加ASTElement对象的forbidden属性
+                              为true并将错误信息添加到errors数组中。
+                              当该标签为input标签&&存在v-model属性时&&type(动态属性或静态属性)不为(空或undefined)时,删除v-for属性信息,
+                              并对key、ref、Slot、is、inline-template、css、style等等属性处理,并设置if、else、elseif、ifConditions属性。
+
+                            - 当前解析的标签(存在v-pre属性或在v-pre属性的父节点内)时,会将剩余存在ASTElement对象的attrsList数组中的
+                              所有属性值变成静态字符串.
+                              当前解析标签不(存在v-pre属性或在v-pre属性的父节点内)时&& 未处理过属性时,会对改标签的所有属性进行处理。
+
+                            - 当前解析的标签为根标签(也就是解析的第一个起始标签)时,将root赋值为该ASTElement对象,并且当节点为
+                              slot或template时将错误提示放入errors数组中,存在v-for属性时将错误提示'不能在根组件上使用v-for属性'放入errors数组中。
+
+                            - 当前解析标签不为根标签 && 与根标签同级时。(同根级标签,根标签要存在if属性&&当前标签要存在elseif或else,否则要提示错误提示)
+                              如果根标签存在if属性 && 当前标签存在(elseif属性 || else属性)时,与根元素一样对标签名为slot或template时
+                              和存在属性v-for时进行错误提示收集,并在根元素的ASTElement对象中添加ifConditions数组,将
+                              {exp: 当前标签的elseif属性,block: 当前标签的ASTElement对象}添加进ifConditions数组中。
+
+                              否则: 将错误提示放入errors数组中
+
+                            - 当前标签存在父节点 && 不为(style || script)标签时,也就是说该标签不为根元素。
+                              · 当前标签存在elseif或else属性时,将当前节点信息放入存在if属性的上一个兄弟节点信息ASTElement对象中的ifConditions数组中。
+
+                              · 当前标签不存在(elseif&&else)属性&&存在slotScope属性时,将父标签ASTElement对象的plain属性设置为false,
+                                缓存当前标签的slot属性值或"default"字符串为name,设置父标签信息的scopedSlots对象的name属性为当前标签信息ASTElement对象。
+
+                              · 当前标签不存在(elseif&&else)属性&&不存在slotScope属性时,将当前标签信息ASTElement对象放入父节点的children数组,
+                                设置当前标签信息ASTElement对象的parent属性为父标签信息ASTElement对象.
+
+                            - · 当前标签不为一元标签 && 当前起始标签不存在/结束标识符时,设置当前标签信息为下一个起始标签的父标签信息,并将当前起始标签
+                                信息放入parse函数的stack数组中,
+
+                              · 为一元标签 || 存在/结束标识符时,存在v-pre属性则将inVPre初始化为false,当前节点为pre节点时,将inPre变量初始化为false,
+                                然后循环执行options.modules数组中的postTransformNode函数(在weex中存在)
+
+                            - 当前面的执行完后,当前标签不为一元标签或不存在/结束标识符时 && 标签名不为pre,textarea标签 && 剩余html模板第一个字符是'\n'字符时,
+                              将index下标更新并将'\n'字符从html中剔除             --------------------进入下一循环
+
+                    2、html的第一个字符不是<,但是存在<字符时
+                        1、缓存<字符后面的html,并进入一个循环,该循环的进入条件是:
+                            一、html字符开头非闭合标签: 比如: </(
+                            二、html字符开头非起始标签: 比如: <((
+                            三、html字符开头非注释标签: 比如: <!-(
+                            四、html字符开头非条件注释标签: 比如: <!([
+                          获取第二个<字符的位置,如果不存在则直接退出循环,否则将正确标签前面的字符删除,并更新html。
+
+                    3、html字符不存在<字符时,表示余下的html为字符串,则将html初始化为'';
+
+                    4、· 不存在父节点时,如果为纯字符串模板时，收集警告缺少根元素,或者如果根元素前面存在字符串则收集警告,该文本将被忽略。
+                       · 存在父节点&&在IE浏览器下&&节点名为textarea&&placeholder属性值与文本节点值(IE浏览器的一个bug,placeholder属性值
+                         会被当做textarea节点的值)相同时,不做任何事。
+                       · text = 当前文本节点在pre标签中或存在文本节点?在标签名为style或script时返回文本节点内容否则将文本内容转义 : 需要保留空格并且
+                         文本节点存在子节点时返回' '否则''。
+                            ·text存在时
+                               1、不存在v-pre属性&& text !== ' ' && 文本中存在vue的字面表达式{{}},将当前文本节点的信息设置为type:2的对象放入当前
+                                  ASTElement对象的children数组中。
+                               2、不满足上面的条件 && (text !== ' ' || children数组为空数组 || children数组最后一位对象的text属性 !== '')时,将
+                                  该文本信息设置为type:3的对象放入当前ASTElement对象的children数组中。
+
+          ------lastTag不为空(有未闭合的标签) && 标签为script,style,textarea时,在reCache对象中缓存把(最后一个未闭合标签)为属性并且值为(该标签闭合形式的正则表达式),
+                将html模板中的lastTag的闭合标签(包括闭合标签前面的内容text)替换为''字符.如果未闭合的标签存在&&是(pre或textarea)&&text第一个字符是换行符,将'\n'字符
+                去掉。最后将text中存在vue字面表达式{{}}则设置type:2的信息对象,不存在则type:3的纯文本信息对象。将index下标更新为原index+未闭合标签(包括前面的字符)
+                字符数,将html更新为去除(text+未闭合标签)字符的html,将该未闭合标签闭合并将其(包括其后面的标签)从stack数组中去除,lastTag更新为该未闭合标签的上一个为闭合标签。
+
+
+        起始是<字符但是不符合结束标签格式、起始标签格式、注释标签格式、条件注释格式、Doctype格式 && 该不合格标签为根标签时,收集根元素之外的文本text参数将被忽略警告和不合格的根元素错误。
+
+      3、最后将还存在stack数组中的未闭合标签进行闭合，并收集警告信息。(唯一想到的就是未闭合的根标签)
+
+7、optimize是怎么优化AST的?
+   1、为ats树各个节点中添加static属性true || false,判断其是否为纯静态的节点
+   2、类型为1的只要各个节点的子孙元素为非纯静态节点则其也不是纯静态节点
+   3、类型为1的各个节点添加staticInFor属性(前提为纯静态或存在once属性)
+   4、类型为1的各个节点添加staticRoot属性为true(前提纯静态属性、存在长度大于1的子元素集合 || 第一个子节点不为纯文本类型),
+      否则staticRoot属性为false.
+   比如:<div>23423</div>
+      div: static = false(原因:缺少staticClass和staticStyle)  staticInFor = false staticRoot = false
+
+8、generate是怎么把ast编译成渲染函数的？
+   1、
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

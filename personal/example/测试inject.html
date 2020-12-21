@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>测试inject</title>
+    <script src="./vue.js"></script>
+</head>
+<body>
+<div id="app">
+    <ce-inject></ce-inject>
+    <div>
+        <button @click="changeData">按我会发现爱好变了</button>
+    </div>
+</div>
+<script>
+    Vue.component('ce-inject',{
+        template: `<div>
+                        <button @click="changeObjAttr">点击我改变姓名但是没有刷新视图</button>
+                        <button @click="changeObj">点击我改变姓名</button>
+                        <p>姓名:{{obj.name}}</p>
+                        <p>爱好:{{data.label}}</p>
+                  </div>`,
+        inject: ['obj','data'],
+        methods: {
+            changeObj() {
+                this.obj = {
+                    name: 'bin'
+                }
+            },
+            changeObjAttr () {
+                this.obj.name = 'liBin'
+                console.log(this.obj.name)
+            }
+        }
+    })
+    new Vue({
+        el: '#app',
+        data: {
+            data: {
+                label: '没有'
+            }
+        },
+        provide () {
+            return {
+                obj: {
+                    name: 'li'
+                },
+                data: this.data
+            }
+        },
+        methods: {
+            changeData () {
+                this.data.label = '有了';
+            }
+        }
+    })
+</script>
+</body>
+</html>
